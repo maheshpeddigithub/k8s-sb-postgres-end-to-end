@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-db-config
+  labels:
+    app: postgres
+data:
+  POSTGRES_DB: pgdb
+  POSTGRES_USER: pgadmin
+  POSTGRES_PASSWORD: password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  # type: LoadBalancer
+  ports:
+    - port: 5432
+      name: postgres
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: "postgres"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:latest
+          envFrom:
+            - configMapRef:
+                name: pg-db-config
+          ports:
+            - containerPort: 5432
+              name: pgdb
+          volumeMounts:
+            - name: pgdb
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdb
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 3Gi
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: k8s-sb-postgres-end-to-end-deployment
+spec:
+  selector:
+    matchLabels:
+      app: k8s-sb-postgres-end-to-end
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: k8s-sb-postgres-end-to-end
+        env: development
+    spec:
+      containers:
+        - name: k8s-sb-postgres-end-to-end
+          image: eu.gcr.io/k8s-free-trail-254311/k8s-sb-postgres-end-to-end:v1
+          ports:
+            - containerPort: 9090
+          env:
+            - name: PORT
+              value: "9090"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: NODE_ENV
+              value: "development"
+            - name: POSTGRES_DB
+              value: "pgdb"
+            - name: POSTGRES_USER
+              value: "pgadmin"
+            - name: POSTGRES_PASSWORD
+              value: "password"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-sb-postgres-end-to-end-service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: k8s-sb-postgres-end-to-end
